@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 09"
-author: "WRITE YOUR NAME(S) HERE"
+author: "Brendan Seto"
 date: "2017-11-07"
 output:
   html_document:
@@ -10,6 +10,7 @@ output:
     collapsed: false
     smooth_scroll: false
     df_print: kable
+    code_fold: hide
 ---
 
 ```{r setup, include=FALSE}
@@ -19,14 +20,9 @@ knitr::opts_chunk$set(
 set.seed(76)
 
 library(tidyverse)
+library(mosaic)
+library(gridExtra)
 ```
-
-
-
-# Collaboration
-
-Please indicate who you collaborated with on this assignment: 
-
 
 
 # Question 1: Run k-means
@@ -53,30 +49,98 @@ cluster_centers <- cluster_centers %>%
   as_tibble() %>% 
   mutate(cluster=as.factor(1:k))
 
-ggplot(NULL, aes(x=x1, y=x2, col=cluster)) +
+p2 <-ggplot(NULL, aes(x=x1, y=x2, col=cluster)) +
   geom_point(data=observations) +
-  geom_point(data=cluster_centers, size=5)
+  geom_point(data=cluster_centers, size=5) +
+  labs(list(title = "Data from Observations_2"))+
+  guides(col=FALSE)
 ```
 
-**Questions**:
+```{r}
+# Set observations to be one of two datasets
+observations <- observations_1
 
-1. Run KMC 10 times on `observations_1` and comment on the consistency of the
-results.
-1. Speculate on the root cause of any consistency or inconsistency in the
-results.
-1. Run KMC 10 times on `observations_2` and comment on the consistentcy of the
-results.
-1. Speculate on the root cause of any consistency or inconsistency in the
-results.
+# Fit model for k=2
+k <- 2
+k_means_results <- kmeans(observations, centers=k)
+clusters <- k_means_results$cluster
+cluster_centers <- k_means_results$centers
 
-**Answers**:
+# Add cluster results to observations. Note we convert to factor since cluster
+# ID's should be treated as categorical
+observations$cluster <- as.factor(clusters)
 
-1.
-1.
-1.
-1.
+# Add cluster ID's to cluster_centers
+cluster_centers <- cluster_centers %>% 
+  as_tibble() %>% 
+  mutate(cluster=as.factor(1:k))
 
+p1 <- ggplot(NULL, aes(x=x1, y=x2, col=cluster)) +
+  geom_point(data=observations) +
+  geom_point(data=cluster_centers, size=5) +
+  labs(list(title = "Data from Observations_1"))+
+  guides(col=FALSE)
 
+grid.arrange(p1,p2, ncol=2)
+```
+
+##Answers:
+
+###1. Run KMC 10 times on `observations_1` and comment on the consistency of the results.
+
+For the purposes of this assignment, I will only be looking at the location of the cluster centers (i hope this is right).
+
+```{r}
+kms1 <- function(data){
+  # Set observations to be one of two datasets
+  observations <- data
+
+  # Fit model for k=2
+  k <- 2
+  k_means_results <- kmeans(observations, centers=k)
+  clusters <- k_means_results$cluster
+  cluster_centers <- k_means_results$centers
+
+  # Add cluster results to observations. Note we convert to factor since cluster
+  # ID's should be treated as categorical
+  observations$cluster <- as.factor(clusters)
+
+  # Add cluster ID's to cluster_centers
+  cluster_centers <- cluster_centers %>% 
+    as_tibble() %>% 
+    arrange(x1,x2) %>% 
+    mutate(cluster=as.factor(1:k))
+  
+  return(cluster_centers)
+}
+
+prob1 <- do(10)*kms1(observations_1)
+
+prob1 %>% group_by(cluster) %>% 
+  summarise(mean_x1 = mean(x1), mean_x2 = mean(x2), sd_1 = sd(x1), sd_x2 = sd(x2))
+```
+
+The results are not very consistent.  Were I to run a t.test, I would find that there is no significant difference between clusters.  
+
+###2. Speculate on the root cause of any consistency or inconsistency in the results.
+
+I don't think there is a "natural" grouping in this data.  As we can see in the plots above, there is a fairly uniform distribution.  I do not expect distinct clusters to come up every time.
+
+###3. Run KMC 10 times on `observations_2` and comment on the consistentcy of the results.
+
+```{r}
+prob2 <- do(10)*kms1(observations_2)
+
+prob2 %>% group_by(cluster) %>% 
+  summarise(mean_x1 = mean(x1), mean_x2 = mean(x2), sd_1 = sd(x1), sd_x2 = sd(x2))
+
+```
+
+Here there is no standard deviation, the same clusters appear every time.  This leads me to believe that there is a very distinct pair of clusters that are so strong, they appear over and over again.  
+
+###4. Speculate on the root cause of any consistency or inconsistency in the results.
+
+Look at the graph.  There are clearly two distinct groupings.  I bet Albert simulated the data from these two points, but even then it's striking that they are exactly the same every time...
 
 # Bonus question: Code your own
 
@@ -84,18 +148,40 @@ Read ISLR page 388 Algorithm 10.1 and implement k-means clustering from scratch.
 Don't worry about doing it for general $k$; keep it simple and do it for $k=2$
 specifically. Apply it to `observations_2` from above.
 
-```{r}
+```{r, echo = TRUE}
 # Hint:
 library(proxy)
+
 A <- data_frame(
   x1 = c(0, 0.5, 0.75, 1),
   x2 = c(0, 0.5, 0.75, 1)
-)
+  )
+
 B <- data_frame(
   x1 = c(1, 0),
   x2 = c(1, 0)
-)
-distance_matrix <- proxy::dist(x=A, y=B)
-distance_matrix
-apply(distance_matrix, 1, which.min)
+  )
+
+kms2_pre <- function(data, center1, center2){
+  A <- data
+  B <- data_frame(
+    x1 = center1,
+    x2 = center2
+  )
+  distance_matrix <- proxy::dist(x=A, y=B)
+  distance_matrix
+  data <- data %>% mutate(cluster = apply(distance_matrix, 1, which.min)) %>% 
+    group_by(cluster) %>% 
+    summarise(x1 = mean(x1), x2 = mean(x2))
+  
+  return(data)
+}
+
+for(i in seq(1:10)){
+  B <- kms2_pre(observations_2, B$x1, B$x2) %>% select(x1,x2)
+}
+
+B %>% arrange(x1) %>% cbind(prob2 %>% group_by(cluster) %>% summarise(P2_x1 = mean(x1), P2_x2 = mean(x2)))
 ```
+
+Yay! Got same clusters!
